@@ -1,0 +1,263 @@
+import pandas as pd
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from keras.callbacks import EarlyStopping
+
+
+#load the data
+url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/housing/housing.data'
+col_names = ['CRIM', 'ZN', 'INDUS', 'CHAS', 'NOX', 'RM', 'AGE', 'DIS', 'RAD',
+                'TAX', 'PTRATIO', 'B', 'LSTAT', 'MEDV' ]
+house_df =  pd.read_csv(url, sep= '\s+', names=col_names )
+house_df.head()
+
+
+'''====== Data Exploration and Preprocessing ======'''
+
+#shape of dataframe
+house_df.shape
+
+
+#check there are any NAN values
+house_df.isnull().values.any()
+
+
+'''=== show the statistics analysis of each attributes ==='''
+#descriptive statistics 
+house_df.describe()
+
+
+'''=== Show the linear relationship between features  and price (MEDV). Thus, it provides that how the scattered 
+      they are and which features has more impact in prediction of house price. ==='''
+
+# visiualize all variables  with price(MEDV)
+from scipy import stats
+#creates figure
+plt.figure(figsize=(18, 18))
+
+for i, col in enumerate(house_df.columns[0:13]): #iterates over all columns except for price column (last one)
+    plt.subplot(5, 3, i+1) # each row three figure
+    x = house_df[col] #x-axis
+    y = house_df['MEDV'] #y-axis
+    plt.plot(x, y, 'o')
+    
+    # Create regression line
+    plt.plot(np.unique(x), np.poly1d(np.polyfit(x, y, 1)) (np.unique(x)), color='red')
+    plt.xlabel(col) # x-label
+    plt.ylabel('prices') # y-label
+
+
+# separate the training and target variable
+feature = house_df.iloc[:,0:13] #  training variables
+target = house_df.iloc[:,13] # target varible
+print(feature.head())
+print('\n',target.head())
+
+
+'''=== Noramlization the features. Since it is seen that features have different ranges, it is best practice to
+normalize/standarize the feature before using them in the model ==='''
+
+#feature normalization
+normalized_feature =  keras.utils.normalize(feature.values)
+print(normalized_feature)
+
+
+'''==== Multi-Layer Perception architecture is used for prediction of house price ===='''
+
+# shuffle and split data into train (~80%) and test (~20%)
+X_train, X_test, y_train, y_test = train_test_split(normalized_feature, target.values, 
+                                                    test_size=0.2, random_state=42) 
+print('training data shape: ',X_train.shape)
+print('testing data shape: ',X_test.shape)
+
+
+'''===== Build MLP Network ====='''
+
+#get number of columns in training data
+n_cols = X_train.shape[1]
+
+# builds model
+model = keras.Sequential()
+
+model.add(keras.layers.Dense(150, activation=tf.nn.relu, 
+                       input_shape=(n_cols,)))
+model.add(keras.layers.Dense(150, activation=tf.nn.relu))
+model.add(keras.layers.Dense(150, activation=tf.nn.relu))
+model.add(keras.layers.Dense(150, activation=tf.nn.relu))
+model.add(keras.layers.Dense(150, activation=tf.nn.relu))
+model.add(keras.layers.Dense(1))
+
+#compile model
+model.compile(loss='mse', optimizer='adam', metrics=['mae']) # use metric as mean absolute error
+
+#inspect the model
+model.summary()
+
+
+#train model and perform validation test
+
+early_stop = EarlyStopping(monitor='val_loss', patience=15) # stops training when it doesn't show improvemnet.
+
+history = model.fit(X_train, y_train, epochs=50, 
+          validation_split=0.2, verbose=1, callbacks=[early_stop])
+
+
+# show the graph of model loss in trainig and validation 
+
+plt.figure(figsize=(15,8))
+plt.xlabel('Epoch')
+plt.ylabel('Mean Square Error')
+plt.plot(history.epoch, history.history['loss'],
+           label='Train Loss')
+plt.plot(history.epoch, history.history['val_loss'],
+           label = 'Val loss')
+plt.title('Model loss')
+plt.legend()
+
+
+#check the model performace in test dataset
+score = model.evaluate(X_test, y_test, verbose=1)
+print('loss value: ', score[0])
+print('Mean absolute error: ', score[1])
+
+
+'''=== predict the house price ==='''
+
+# predict house price using the test data 
+test_predictions = model.predict(X_test).flatten()
+print(test_predictions)
+
+
+
+# show the true value and predicted value in dataframe
+true_predicted = pd.DataFrame(list(zip(y_test, test_predictions)), 
+                    columns=['True Value','Predicted Value'])
+true_predicted.head(10)
+
+
+
+#visiulize the true value with predicted value (using line graph)
+x = test_predictions
+y = y_test
+plt.figure(figsize=(30,10))
+plt.plot(x, label='predicted value')
+plt.plot(y, label='true value')
+plt.title('Evaluation Result')
+plt.legend()
+plt.show()
+
+
+'''=== Visualize the model evaluation skill ==='''
+
+# visualize the prediction uisng diagonal line
+y = test_predictions #y-axis
+x = y_test #x-axis
+fig, ax = plt.subplots(figsize=(10,6)) # create figure
+ax.scatter(x,y) #scatter plots for x,y
+ax.set(xlim=(0,55), ylim=(0, 55)) #set limit
+ax.plot(ax.get_xlim(), ax.get_ylim(), color ='red') # draw 45 degree diagonal in figure
+plt.xlabel('True Values')
+plt.ylabel('Predicted values')
+plt.title('Evaluation Result')
+plt.show()
+
+
+
+'''   ======= Remove outliers from the data set ========'''
+#Tried to see the model perfomance after removing the outliers, the perfomance doesn't show much improvemnt. This might be less data size after remoing the outliers.
+#calcualtes quartiles and interquaterlies
+Q1 = house_df.quantile(0.25)
+Q3 = house_df.quantile(0.75)
+IQR = Q3 - Q1
+house_data = house_df.iloc[:,0:14]
+house_data.shape
+
+
+
+#data after outliers remvoing
+clean_data = house_df[~((house_data < (Q1 - 1.5 * IQR)) |(house_data > (Q3 + 1.5 * IQR))).any(axis=1)]
+clean_data.shape
+
+
+
+feature = clean_data.iloc[:,0:13] #  training variables
+target = clean_data.iloc[:,13] # target varible
+print(feature.head())
+print('\n',target.head())
+
+
+
+#feature normalization
+normalized_feature =  keras.utils.normalize(feature.values)
+print(normalized_feature)
+
+
+
+# shuffle and split data into train (~80%) and test (~20%)
+X_train, X_test, y_train, y_test = train_test_split(normalized_feature, target.values, test_size=0.2, random_state=42) 
+print('training data shape: ',X_train.shape)
+print('testing data shape: ',X_test.shape)
+
+
+
+#get number of columns in training data
+n_cols = X_train.shape[1]
+
+# builds model
+model = keras.Sequential()
+
+model.add(keras.layers.Dense(150, activation=tf.nn.relu, 
+                       input_shape=(n_cols,)))
+model.add(keras.layers.Dense(150, activation=tf.nn.relu))
+model.add(keras.layers.Dense(150, activation=tf.nn.relu))
+model.add(keras.layers.Dense(150, activation=tf.nn.relu))
+model.add(keras.layers.Dense(150, activation=tf.nn.relu))
+model.add(keras.layers.Dense(1))
+
+#compile model
+model.compile(loss='mse', optimizer='adam', metrics=['mae']) # use metric as mean absolute error
+
+#inspect the model
+model.summary()
+
+
+
+#train model
+early_stop = EarlyStopping(monitor='val_loss', patience=20) # stops training when it doesn't show improvemnet.
+
+history = model.fit(X_train, y_train, epochs=30, 
+          validation_split=0.2, verbose=1, callbacks=[early_stop])
+
+
+#check the model performace in test dataset
+score = model.evaluate(X_test, y_test, verbose=1)
+print('loss value: ', score[0])
+print('Mean absolute error: ', score[1])
+
+
+# predict house price using the test data 
+test_predictions = model.predict(X_test).flatten()
+print(test_predictions)
+
+
+# show the true value and predicted value in dataframe
+true_predicted = pd.DataFrame(list(zip(y_test, test_predictions)), columns=['True Value','Predicted Value'])
+true_predicted.head(10)
+
+
+
+# visualize the prediction uisng diagonal line
+y = test_predictions #y-axis
+x = y_test #x-axis
+fig, ax = plt.subplots(figsize=(10,6)) # create figure
+ax.scatter(x,y) #scatter plots for x,y
+ax.set(xlim=(0,55), ylim=(0, 55)) #set limit
+ax.plot(ax.get_xlim(), ax.get_ylim(), color ='red') # draw 45 degree diagonal in figure
+plt.xlabel('True Values')
+plt.ylabel('Predicted values')
+plt.title('Evaluation Result')
+plt.show()
+    
